@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+
+  <body class="bg-gray-100">
+    <div class="h-screen bg-[url('static/img/bg-login-pt2.png')] bg-cover bg-center relative">
+      <div class="absolute right-0">
+        <img class="h-screen ml-auto w-fit" src="static/img/bg-login.png" alt="" />
+        <div class="absolute top-52 left-48 z-10 px-4 py-2">
+          <div class="flex gap-3">
+            <p class="font-serif">L</p>
+            <p class="font-serif">O</p>
+            <p class="font-serif">G</p>
+            <p class="font-serif">I</p>
+            <p class="font-serif">N</p>
+          </div>
+          <form action="#">
+            <div class="w-56 h-fit">
+              <div class="w-40 h-fit mt-10">
+                <p>username</p>
+                <input class="bg-white rounded-b-lg w-52 h-7 m-2.5" type="text" />
+              </div>
+              <div class="w-40 h-fit">
+                <p>password</p>
+                <input class="bg-white rounded-b-lg w-52 h-7 m-2.5" type="password" />
+                <a class="text-orange-500" href="#">lupa password?</a>
+              </div>
+            </div>
+            <div class="flex justify-end m-10 mr-0">
+              <div class="bg-orange-500 w-24 h-10 rounded-xl">
+                <div class="flex justify-center mt-1">
+                  <p class="text-white">Login</p>
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
