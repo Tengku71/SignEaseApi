@@ -505,7 +505,6 @@ def verify_token():
 
 
 def send_login_notification(email, nama):
-    global mail
     local_tz = pytz.timezone("Asia/Jakarta")
     now = datetime.now(local_tz).strftime("%d-%m-%Y %H:%M:%S")
 
@@ -556,7 +555,6 @@ def resend_otp():
 
 
 def otp_generate(email, nama):
-    global mail
     otp_code = str(random.randint(1000, 9999))
     local_tz = pytz.timezone("Asia/Jakarta")
     now = datetime.now(local_tz)
