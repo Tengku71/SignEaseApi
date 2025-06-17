@@ -732,15 +732,15 @@ def register():
         # Validasi password
         if password != confirmpassword:
             flash('Password dan konfirmasi password tidak cocok', 'danger')
-            return jsonify({'err1'})
+            return jsonify({"message":'Password dan konfirmasi password tidak cocok'})
 
         if len(password) < 6:
             flash('Password harus lebih dari 6 karakter', 'danger')
-            return jsonify({'err2'})
+            return jsonify({"message":'Password harus lebih dari 6 karakter'})
 
         if mongo.db.users.find_one({'email': email}):
             flash('Email sudah terdaftar', 'danger')
-            return jsonify({'err3'})
+            return jsonify({"message":'Email sudah terdaftar'})
 
         # Hash password
         hashed_password = bcrypt.hashpw(password, bcrypt.gensalt())
