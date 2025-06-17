@@ -342,7 +342,7 @@ def request_reset():
         return jsonify({'status': 'fail', 'message': 'Email tidak terdaftar'}), 404
 
     token = generate_reset_token(email)
-    reset_url = f'http://127.0.0.1:5000/reset-password/{token}'
+    reset_url = f'https://signease.tengkudimas.my.id/reset-password/{token}'
 
     try:
         msg = Message("Reset Password Anda",
@@ -505,22 +505,37 @@ def verify_token():
 
 
 def send_login_notification(email, nama):
+    if not email:
+        print("[ERROR] Email is missing in send_login_notification.")
+        return
+
+    if not nama:
+        nama = "Pengguna"
+
+    # Waktu lokal
     local_tz = pytz.timezone("Asia/Jakarta")
     now = datetime.now(local_tz).strftime("%d-%m-%Y %H:%M:%S")
 
+    # Reset URL (for safety link if user didn't login)
+    token = generate_reset_token(email)
+    reset_url = f'https://signease.tengkudimas.my.id/reset-password/{token}'
+
     subject = "Notifikasi Login - Akun Anda"
-    msg = Message(subject, recipients=[email])
+    msg = Message(subject=subject, recipients=[email])
     msg.body = f"""
     Halo {nama},
 
     Kami mendeteksi login ke akun Anda pada:
 
-    Tanggal & Waktu: {now} (WIB)
+    📅 Tanggal & Waktu: {now} (WIB)
 
-    Jika ini Anda, abaikan email ini. Jika bukan Anda, segera amankan akun Anda.
+    Jika ini adalah Anda, abaikan email ini.
+
+    Jika **bukan** Anda, segera amankan akun Anda dengan mengganti password di tautan ini:
+    {reset_url}
 
     Terima kasih,
-    Tim Keamanan
+    Tim Keamanan SignEase
     """
 
     try:
