@@ -882,10 +882,10 @@ def delete_user():
 
 @app.route('/user_login_history', methods=['GET'])
 @token_required
-def get_user_login_history(current_user_id):
+def get_user_login_history():
     try:
-        history = mongo.db.login_history.find({'user_id': current_user_id}).sort('timestamp', -1)
-
+        history = mongo.db.login_history.find({'user_id': ObjectId(g.user_id)}).sort('timestamp', -1)
+        # user = mongo.db.users.find_one({'_id': ObjectId(g.user_id)})
         wib = timezone('Asia/Jakarta')
         history_list = []
 
