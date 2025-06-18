@@ -688,8 +688,8 @@ def get_user():
         'email': user.get('email', '')
     })
 
-@token_required
 @app.route('/logout_u')
+@token_required
 def logout_user():
     return jsonify({"message": "berhasil logout!"}), 200
 
