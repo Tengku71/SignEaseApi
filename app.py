@@ -703,7 +703,6 @@ def user_login():
         email = data['email']
         password = data['password']  # plain text password from client
 
-
         user = mongo.db.users.find_one({'email': email})
         if not user:
             return jsonify({'error': 'Email atau password salah'}), 401
@@ -729,8 +728,9 @@ def user_login():
         token = generate_jwt(str(user['_id']), 'user')
 
         send_login_notification(email, user["nama"])
+        local_tz = pytz.timezone("Asia/Jakarta")
 
-        login_time = datetime.utcnow() + timedelta(hours=7)
+        login_time = datetime.now(local_tz)
         login_data = {
             'user_id': str(user['_id']),
             'email': email,
