@@ -108,15 +108,12 @@ def login_google_mobile():
                 'message': 'otp',
             }), 200
 
-        user_obj = User(existing_user)
-        login_user(user_obj)
-        
-        # ✅ Save login history
-        login_time = timestamp.astimezone(local_tz)
-        # login_time = datetime.utcnow() + timedelta(hours=7)
+        user = mongo.db.users.find_one({'email': user_info['email']})
+        local_tz = pytz.timezone("Asia/Jakarta")
+        login_time = datetime.now(local_tz)
         login_data = {
-            'user_id': str(existing_user['_id']),
-            'email': existing_user['email'],
+            'user_id': str(user['_id']),
+            'email' : user['email'],
             'timestamp': login_time,
             'ip_address': request.remote_addr,
             'user_agent': request.headers.get('User-Agent')
