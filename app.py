@@ -877,33 +877,28 @@ def delete_user():
     except Exception as e:
         return jsonify({'error': f'Kesalahan server: {str(e)}'}), 400
 
-
-
-
-@app.route('/user_login_history', methods=['GET'])
-@token_required
-def get_user_login_history():
+@app.route('/login_history_user', methods=['GET'])
+def get_login_history():
     try:
-        history = mongo.db.login_history.find({'user_id': ObjectId(g.user_id)}).sort('timestamp', -1)
-        local_tz = pytz.timezone("Asia/Jakarta")
-        history_list = []
-
-        print(history)
+        user_id = request.args.get('user_id')
+        if not user_id:
+            return jsonify({'error': 'Parameter user_id wajib diisi'}), 400        
+        user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+        if not user:
+            return jsonify({'error': 'User tidak ditemukan'}), 404
+            
+        history_cursor = mongo.db.login_history.find({'user_id': user_id}).sort('timestamp', -1)
         
-        for entry in history:
-            timestamp = entry.get('timestamp')
-            if timestamp:
-                timestamp_wib = timestamp.astimezone(local_tz).strftime('%Y-%m-%d %H:%M:%S WIB')
-            else:
-                timestamp_wib = 'Tidak tersedia'
-
-            history_list.append({
-                'timestamp': timestamp_wib,
-                'ip_address': entry.get('ip_address', 'N/A'),
-                'user_agent': entry.get('user_agent', 'N/A')
+        history = []
+        for entry in history_cursor:
+            history.append({
+                'email': entry.get('email'),
+                'timestamp': entry.get('timestamp').strftime('%Y-%m-%d %H:%M:%S'),
+                'ip_address': entry.get('ip_address'),
+                'user_agent': entry.get('user_agent')
             })
 
-        return jsonify({'login_history': history_list}), 200
+        return jsonify({'login_history': history}), 200
 
     except Exception as e:
         return jsonify({'error': f'Terjadi kesalahan: {str(e)}'}), 500
