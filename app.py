@@ -885,15 +885,15 @@ def delete_user():
 def get_user_login_history():
     try:
         history = mongo.db.login_history.find({'user_id': ObjectId(g.user_id)}).sort('timestamp', -1)
-        # user = mongo.db.users.find_one({'_id': ObjectId(g.user_id)})
-        wib = timezone('Asia/Jakarta')
+        local_tz = pytz.timezone("Asia/Jakarta")
         history_list = []
-        return jsonify({'login_history': history}), 200
 
+        print(history)
+        
         for entry in history:
             timestamp = entry.get('timestamp')
             if timestamp:
-                timestamp_wib = timestamp.astimezone(wib).strftime('%Y-%m-%d %H:%M:%S WIB')
+                timestamp_wib = timestamp.astimezone(local_tz).strftime('%Y-%m-%d %H:%M:%S WIB')
             else:
                 timestamp_wib = 'Tidak tersedia'
 
