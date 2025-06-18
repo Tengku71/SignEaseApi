@@ -67,6 +67,7 @@ def login_google_mobile():
     try:
         data = request.get_json()
         id_token_str = data.get('idToken')
+        local_tz = pytz.timezone("Asia/Jakarta")
 
         if not id_token_str:
             return jsonify({'success': False, 'message': 'ID Token is required'}), 400
@@ -107,6 +108,20 @@ def login_google_mobile():
                 'message': 'otp',
             }), 200
 
+        user_obj = User(existing_user)
+        login_user(user_obj)
+        
+        # ✅ Save login history
+        login_time = timestamp.astimezone(local_tz)
+        # login_time = datetime.utcnow() + timedelta(hours=7)
+        login_data = {
+            'user_id': str(existing_user['_id']),
+            'email': existing_user['email'],
+            'timestamp': login_time,
+            'ip_address': request.remote_addr,
+            'user_agent': request.headers.get('User-Agent')
+        }
+        mongo.db.login_history.insert_one(login_data)
         
         # Generate your own JWT token to use for your application.
         role = 'admin' if user_info['email'] == 'admin@example.com' else 'user'
