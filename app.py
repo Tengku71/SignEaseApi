@@ -878,12 +878,12 @@ def delete_user():
         return jsonify({'error': f'Kesalahan server: {str(e)}'}), 400
 
 @app.route('/login_history_user', methods=['GET'])
+@token_required
 def get_login_history():
     try:
-        user_id = request.args.get('user_id')
         if not user_id:
             return jsonify({'error': 'Parameter user_id wajib diisi'}), 400        
-        user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
+        user = mongo.db.users.find_one({'_id': ObjectId(g.user_id)})
         if not user:
             return jsonify({'error': 'User tidak ditemukan'}), 404
             
