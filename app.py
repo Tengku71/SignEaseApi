@@ -888,6 +888,7 @@ def get_user_login_history():
         # user = mongo.db.users.find_one({'_id': ObjectId(g.user_id)})
         wib = timezone('Asia/Jakarta')
         history_list = []
+        return jsonify({'login_history': history}), 200
 
         for entry in history:
             timestamp = entry.get('timestamp')
