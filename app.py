@@ -877,3 +877,33 @@ def delete_user():
     except Exception as e:
         return jsonify({'error': f'Kesalahan server: {str(e)}'}), 400
 
+
+
+
+@app.route('/user_login_history', methods=['GET'])
+@token_required
+def get_user_login_history(current_user_id):
+    try:
+        history = mongo.db.login_history.find({'user_id': current_user_id}).sort('timestamp', -1)
+
+        wib = timezone('Asia/Jakarta')
+        history_list = []
+
+        for entry in history:
+            timestamp = entry.get('timestamp')
+            if timestamp:
+                timestamp_wib = timestamp.astimezone(wib).strftime('%Y-%m-%d %H:%M:%S WIB')
+            else:
+                timestamp_wib = 'Tidak tersedia'
+
+            history_list.append({
+                'timestamp': timestamp_wib,
+                'ip_address': entry.get('ip_address', 'N/A'),
+                'user_agent': entry.get('user_agent', 'N/A')
+            })
+
+        return jsonify({'login_history': history_list}), 200
+
+    except Exception as e:
+        return jsonify({'error': f'Terjadi kesalahan: {str(e)}'}), 500
+
