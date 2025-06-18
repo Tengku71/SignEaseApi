@@ -129,7 +129,13 @@ def login_google_mobile():
             'success': True,
             'message': 'Login Google berhasil',
             'token': token_jwt,
+            'user': {
+                'name': user.get('nama', ''),
+                'profileImage': user.get('profileImage', ''),
+                'email': user.get('email', ''),
+            }
         }), 200
+
 
     except ValueError:
         # Raised if the idToken fails verification.
@@ -738,7 +744,21 @@ def user_login():
 
         mongo.db.login_history.insert_one(login_data)
 
-        return jsonify({'message': 'Login berhasil', 'token': token}), 200
+        return jsonify({
+            'message': 'Login berhasil',
+            'token': token,
+            'user': {
+                'name': user.get('nama', ''),
+                'profileImage': user.get('profileImage', ''),
+                'level': user.get('level', 0),
+                'history': user.get('history', []),
+                'leaderboardScore': user.get('leaderboardScore', 0),
+                'email': user.get('email', ''),
+                'kelas': user.get('kelas', ''),
+                'points': user.get('points', 0),
+            }
+        }), 200
+
 
     except Exception as e:
         # traceback.print_exc()
