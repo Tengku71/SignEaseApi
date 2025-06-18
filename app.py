@@ -881,13 +881,12 @@ def delete_user():
 @token_required
 def get_login_history():
     try:
-        if not user_id:
-            return jsonify({'error': 'Parameter user_id wajib diisi'}), 400        
+        
         user = mongo.db.users.find_one({'_id': ObjectId(g.user_id)})
         if not user:
             return jsonify({'error': 'User tidak ditemukan'}), 404
             
-        history_cursor = mongo.db.login_history.find({'user_id': user_id}).sort('timestamp', -1)
+        history_cursor = mongo.db.login_history.find({'user_id': g.user_id}).sort('timestamp', -1)
         
         history = []
         for entry in history_cursor:
