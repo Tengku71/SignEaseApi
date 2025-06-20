@@ -221,19 +221,52 @@ def home():
 # Bagian LeaderBoard
 @app.route('/leaderboard', methods=['GET'])
 def leaderboard():
-    users = list(mongo.db.users.find({"points": {"$exists": True}}).sort("points", -1))
+    query = {"points": {"$exists": True}}
 
+    # Ambil parameter dari form
     user_id = request.args.get("user_id")
     nama = request.args.get("nama")
-    points = request.args.get("points")
+    sort = request.args.get("sort")
+    day = request.args.get("day")
+    month = request.args.get("month")
 
-    error = None
-    if user_id is None:
-        error = "user_id tidak ditemukan"
-    elif points is None:
-        error = "points tidak ditemukan"
+    wib = timezone('Asia/Jakarta')
+    now = datetime.now(wib)
 
-    return render_template('leaderboard/data.html', users=users, error=error)
+    # Filter berdasarkan user_id dan nama
+    if user_id:
+        query["user_id"] = {"$regex": user_id, "$options": "i"}
+    if nama:
+        query["nama"] = {"$regex": nama, "$options": "i"}
+
+    # Filter berdasarkan tanggal login (misalnya: created_at)
+    date_filter = {}
+    if month:
+        month = int(month)
+        start = datetime(now.year, month, 1, tzinfo=wib)
+        if month == 12:
+            end = datetime(now.year + 1, 1, 1, tzinfo=wib)
+        else:
+            end = datetime(now.year, month + 1, 1, tzinfo=wib)
+
+        if day:
+            day = int(day)
+            start = datetime(now.year, month, day, tzinfo=wib)
+            end = start + timedelta(days=1)
+
+        date_filter["$gte"] = start
+        date_filter["$lt"] = end
+
+        query["created_at"] = date_filter  # Pastikan ada field ini di dokumen
+
+    # Sorting berdasarkan points
+    sort_order = -1  # Default: terbanyak
+    if sort == "asc":
+        sort_order = 1
+
+    users = list(mongo.db.users.find(query).sort("points", sort_order))
+
+    return render_template('leaderboard/data.html', users=users)
 
 
 # Reset Point (admin)
