@@ -320,19 +320,46 @@ def add_user():
 
 @app.route('/login_history', methods=['GET'])
 def admin_login_history():
-    if 'username' not in session:
-        flash('Anda harus login sebagai admin untuk mengakses halaman ini!', 'danger')
-        return redirect(url_for('add_user', error='Silakan login terlebih dahulu'))
-
     try:
-        local_tz = pytz.timezone("Asia/Jakarta")
-        history = mongo.db.login_history.find().sort('timestamp', -1)
+        # Ambil parameter dari form
+        month = request.args.get('month')
+        day = request.args.get('day')
+
+        # Siapkan filter waktu
+        time_filter = {}
+        wib = timezone('Asia/Jakarta')
+        now = datetime.now(wib)
+
+        if month:
+            month = int(month)
+            start = datetime(now.year, month, 1, tzinfo=wib)
+            if month == 12:
+                end = datetime(now.year + 1, 1, 1, tzinfo=wib)
+            else:
+                end = datetime(now.year, month + 1, 1, tzinfo=wib)
+            time_filter['$gte'] = start
+            time_filter['$lt'] = end
+
+        if day and month:
+            day = int(day)
+            start = datetime(now.year, month, day, tzinfo=wib)
+            end = datetime(now.year, month, day + 1, tzinfo=wib)
+            time_filter['$gte'] = start
+            time_filter['$lt'] = end
+
+        # Bangun query
+        query = {}
+        if time_filter:
+            query['timestamp'] = time_filter
+
+        # Ambil data dari Mongo
+        history = mongo.db.login_history.find(query).sort('timestamp', -1)
         history_list = []
 
         for entry in history:
             timestamp = entry.get('timestamp')
             if timestamp:
-                timestamp_wib = timestamp.astimezone(local_tz).strftime('%Y-%m-%d %H:%M:%S WIB')
+                timestamp_wib = timestamp.astimezone(wib).strftime('%Y-%m-%d %H:%M:%S WIB')
             else:
                 timestamp_wib = 'Tidak tersedia'
 
