@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 import os
 
 load_dotenv()
-
+local_tz = pytz.timezone("Asia/Jakarta")
 # Flask-OAuth setup
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY')
@@ -530,23 +530,25 @@ def generate_jwt(user_id, role):
         'exp': (datetime.now() + timedelta(hours=1)).timestamp(),
         'iat': datetime.now().timestamp()
     }
-    # Encrypt the payload
     encrypted_payload = cipher.encrypt(json.dumps(payload).encode())
     token = jwt.encode({'data': encrypted_payload.decode()}, app.secret_key, algorithm='HS256')
     return token
 
+# Decode JWT
 def decode_jwt(token):
     try:
         decoded = jwt.decode(token, app.secret_key, algorithms=['HS256'])
         decrypted = cipher.decrypt(decoded['data'].encode())
         payload = json.loads(decrypted)
-        # validate expiry manually
+
+        # Check expiration manually
         if datetime.now().timestamp() > payload['exp']:
             return None
         return payload
     except Exception:
         return None
 
+# JWT-protected decorator
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -565,7 +567,8 @@ def token_required(f):
         g.role = payload['role']
         return f(*args, **kwargs)
     return decorated
-    
+
+
 @app.route('/verify-token', methods=['GET'])
 @token_required
 def verify_token():
@@ -962,3 +965,38 @@ def get_login_history():
     except Exception as e:
         return jsonify({'error': f'Terjadi kesalahan: {str(e)}'}), 500
 
+@app.route('/api/score', methods=['POST'])
+@token_required
+def submit_score():
+    data = request.get_json()
+    level = data.get('level')
+    points = data.get('points', 0)
+
+    if not level or points <= 0:
+        return jsonify({'error': 'Invalid level or points'}), 400
+
+    user_id = g.user_id
+    users_col = mongo['users']
+    scores_col = mongo['scores']
+
+    user = users_col.find_one({"_id": user_id})
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    new_total = user.get("points", 0) + points
+    users_col.update_one({"_id": user_id}, {"$set": {"points": new_total}})
+
+    now = datetime.now(local_tz).strftime("%d-%m-%Y %H:%M:%S")
+
+    scores_col.insert_one({
+        "user_id": user_id,
+        "level": level,
+        "points": points,
+        "timestamp": now
+    })
+
+    return jsonify({
+        "message": "Points added successfully",
+        "total_points": new_total,
+        "submitted_at": now
+    }), 200
