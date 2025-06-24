@@ -75,21 +75,24 @@ def login_google_mobile():
         # Verify and decode the Google idToken.
         idinfo = id_token.verify_oauth2_token(id_token_str, requests.Request(), GOOGLE_CLIENT_ID)
 
-        # Extract user information from the verified token.
         user_info = {
-            'id': idinfo['sub'],               # Google's unique user ID.
+            'id': idinfo['sub'],
             'email': idinfo['email'],
             'name': idinfo.get('name'),
             'picture': idinfo.get('picture'),
         }
 
-        # Optionally, look for an existing user record or create a new one.
         existing_user = mongo.db.users.find_one({'email': user_info['email']})
         if not existing_user:
             mongo.db.users.insert_one({
                 'nama': user_info['name'],
                 'email': user_info['email'],
                 'confirmed': False,
+                'scores': {  # initialize scores to prevent issues
+                    'level': 0,
+                    'points': 0,
+                    'updated_at': ''
+                }
             })
             otp_generate(user_info['email'], user_info['name'])
             return jsonify({
@@ -98,10 +101,8 @@ def login_google_mobile():
                 'message': 'otp',
             }), 200
 
-        if existing_user['confirmed'] == False:
-            print(f"Before otp_generate, user email: {user_info['email']}")
-            result = otp_generate(user_info['email'], user_info['name'])
-            print(f"otp_generate returned: {result} (type: {type(result)})")
+        if not existing_user.get('confirmed', False):
+            otp_generate(user_info['email'], user_info['name'])
             return jsonify({
                 'success': False,
                 'email': user_info['email'],
@@ -109,39 +110,46 @@ def login_google_mobile():
             }), 200
 
         user = mongo.db.users.find_one({'email': user_info['email']})
-        local_tz = pytz.timezone("Asia/Jakarta")
         login_time = datetime.now(local_tz)
-        login_data = {
+        mongo.db.login_history.insert_one({
             'user_id': str(user['_id']),
-            'email' : user['email'],
+            'email': user['email'],
             'timestamp': login_time,
             'ip_address': request.remote_addr,
             'user_agent': request.headers.get('User-Agent')
-        }
-        mongo.db.login_history.insert_one(login_data)
-        
-        # Generate your own JWT token to use for your application.
+        })
+
         role = 'admin' if user_info['email'] == 'admin@example.com' else 'user'
-        token_jwt = generate_jwt(user_info['id'], role)
-        send_login_notification(idinfo['email'], idinfo.get('name'))
+        token = generate_jwt(str(user['_id']), role)
+        send_login_notification(user_info['email'], user_info.get('name'))
+
+        # ⬇️ Correctly handle `scores` as a dict (not a list)
+        progress = mongo.db.user_progress.find_one({'user_id': str(user['_id'])}, sort=[('timestamp', -1)])
+        level = progress.get('level') if progress else 0
+
+        # Ambil points dari koleksi user_scores
+        score = mongo.db.user_points.find_one({'user_id': str(user['_id'])})
+        points = score.get('points', 0) if score else 0
 
         return jsonify({
             'success': True,
-            'message': 'Login Google berhasil',
-            'token': token_jwt,
+            'message': 'Login berhasil',
+            'token': token,
             'user': {
                 'name': user.get('nama', ''),
                 'profileImage': user.get('profileImage', ''),
                 'email': user.get('email', ''),
+                'points': points,
+                'level': level  # dari progress
             }
         }), 200
 
-
     except ValueError:
-        # Raised if the idToken fails verification.
         return jsonify({'success': False, 'message': 'Invalid ID token'}), 401
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
+
+
     
 
 ################################################################################
@@ -221,52 +229,96 @@ def home():
 # Bagian LeaderBoard
 @app.route('/leaderboard', methods=['GET'])
 def leaderboard():
-    query = {"points": {"$exists": True}}
-
-    # Ambil parameter dari form
-    user_id = request.args.get("user_id")
+    # Ambil filter dari query parameter
     nama = request.args.get("nama")
-    sort = request.args.get("sort")
+    sort = request.args.get("sort", "desc")
     day = request.args.get("day")
     month = request.args.get("month")
 
-    wib = timezone('Asia/Jakarta')
+    wib = timezone("Asia/Jakarta")
     now = datetime.now(wib)
 
-    # Filter berdasarkan user_id dan nama
-    if user_id:
-        query["user_id"] = {"$regex": user_id, "$options": "i"}
-    if nama:
-        query["nama"] = {"$regex": nama, "$options": "i"}
-
-    # Filter berdasarkan tanggal login (misalnya: created_at)
-    date_filter = {}
+    # Build filter waktu
+    time_filter = {}
     if month:
         month = int(month)
         start = datetime(now.year, month, 1, tzinfo=wib)
-        if month == 12:
-            end = datetime(now.year + 1, 1, 1, tzinfo=wib)
-        else:
-            end = datetime(now.year, month + 1, 1, tzinfo=wib)
+        end = datetime(now.year, month + 1, 1, tzinfo=wib) if month < 12 else datetime(now.year + 1, 1, tzinfo=wib)
 
         if day:
             day = int(day)
             start = datetime(now.year, month, day, tzinfo=wib)
             end = start + timedelta(days=1)
 
-        date_filter["$gte"] = start
-        date_filter["$lt"] = end
+        time_filter["timestamp"] = {"$gte": start, "$lt": end}
 
-        query["created_at"] = date_filter  # Pastikan ada field ini di dokumen
+    # Ambil data dari user_points (LEADERBOARD UTAMA)
+    point_records = list(mongo.db.user_points.find(time_filter))
+    users = {str(u["_id"]): u for u in mongo.db.users.find()}
 
-    # Sorting berdasarkan points
-    sort_order = -1  # Default: terbanyak
-    if sort == "asc":
-        sort_order = 1
+    leaderboard = []
+    for record in point_records:
+        user_id = record.get("user_id")
+        user = users.get(user_id)
+        if not user:
+            continue
+        if nama and nama.lower() not in user.get("nama", "").lower():
+            continue
+        leaderboard.append({
+            "_id": user.get("_id"),
+            "user_id": user_id,
+            "nama": user.get("nama", "No Name"),
+            "points": record.get("points", 0),
+            "updated_at": record.get("timestamp").strftime("%d-%m-%Y %H:%M:%S")
+        })
 
-    users = list(mongo.db.users.find(query).sort("points", sort_order))
+    leaderboard.sort(key=lambda x: x["points"], reverse=(sort != "asc"))
 
-    return render_template('leaderboard/data.html', users=users)
+    # AMBIL HISTORY RESET SEMUA POIN
+    history_filter = {}
+    if month:
+        history_filter["reset_at"] = time_filter["timestamp"]
+
+    history_records = list(mongo.db.leaderboard_history.find(history_filter).sort("reset_at", -1))
+    history = []
+    for h in history_records:
+        user = users.get(h.get("user_id"))
+        if not user:
+            continue
+        if nama and nama.lower() not in user.get("nama", "").lower():
+            continue
+        history.append({
+            "user_id": h.get("user_id"),
+            "nama": user.get("nama", "No Name"),
+            "points": h.get("points", 0),
+            "reset_at": h.get("reset_at")
+        })
+
+    return render_template("leaderboard/data.html", users=leaderboard, history=history)
+
+
+@app.route('/reset_all_points', methods=['POST'])
+def reset_all_points():
+    users = list(mongo.db.user_points.find({}))  # Ambil semua user yang punya poin
+
+    local_tz = pytz.timezone("Asia/Jakarta")
+    now = datetime.now(local_tz)
+
+    for user in users:
+        # Simpan ke riwayat
+        mongo.db.leaderboard_history.insert_one({
+            'user_id': user['user_id'],
+            'points': user['points'],
+            'reset_at': now
+        })
+
+        # Reset poin
+        mongo.db.user_points.update_one(
+            {'user_id': user['user_id']},
+            {'$set': {'points': 0, 'timestamp': now}}
+        )
+
+    return redirect(url_for('leaderboard'))
 
 
 # Reset Point (admin)
@@ -292,6 +344,28 @@ def reset_point():
 
     return redirect(url_for('leaderboard', user_id=user_id))
 
+
+@app.route('/questions', methods=['GET', 'POST'])
+def save_questions():
+    if request.method == 'POST':
+        level = int(request.form.get('level'))
+        questions = request.form.getlist('questions[]')
+
+        # Update jika sudah ada, insert jika belum
+        existing = mongo.db.questions.find_one({"level": level})
+        if existing:
+            mongo.db.questions.update_one({"level": level}, {"$set": {"questions": questions}})
+        else:
+            mongo.db.questions.insert_one({"level": level, "questions": questions})
+
+        return redirect(url_for('save_questions', level=level))
+
+    # GET - tampilkan form untuk level tertentu
+    level = request.args.get('level', default=3, type=int)
+    existing = mongo.db.questions.find_one({"level": level})
+    existing_questions = existing['questions'] if existing else []
+
+    return render_template("Quiz/soal.html", level=level, questions=existing_questions)
 
 @app.route('/logout')
 def logout():
@@ -743,7 +817,6 @@ def verify_otp():
 @app.route('/get_user', methods=['GET'])
 @token_required
 def get_user():
-    # Pastikan g.user_id adalah string yang bisa dikonversi ke ObjectId
     try:
         user = mongo.db.users.find_one({'_id': ObjectId(g.user_id)})
     except Exception as e:
@@ -752,10 +825,26 @@ def get_user():
     if not user:
         return jsonify({'error': 'User not found'}), 404
 
+    # Get score info
+    progress = mongo.db.user_progress.find_one({'user_id': str(user['_id'])}, sort=[('timestamp', -1)])
+    level = progress.get('level') if progress else 0
+
+    # Ambil points dari koleksi user_scores
+    score = mongo.db.user_points.find_one({'user_id': str(user['_id'])})
+    points = score.get('points', 0) if score else 0
+
     return jsonify({
-        
-        'email': user.get('email', '')
-    })
+        'success': True,
+        'message': 'Login berhasil',
+        'user': {
+            'name': user.get('nama', ''),
+            'profileImage': user.get('profileImage', ''),
+            'email': user.get('email', ''),
+            'points': points,
+            'level': level  # dari progress
+        }
+    }), 200
+
 
 @app.route('/logout_u')
 @token_required
@@ -777,13 +866,10 @@ def user_login():
         if not stored_password:
             return jsonify({'error': 'Password tidak ditemukan'}), 400
 
-        # stored_password may be bytes or string, convert to bytes if string
         if isinstance(stored_password, str):
             stored_password = stored_password.encode('utf-8')
-
         password_bytes = password.encode('utf-8')
 
-        # bcrypt password check
         if not bcrypt.checkpw(password_bytes, stored_password):
             return jsonify({'error': 'Email atau password salah'}), 401
 
@@ -792,11 +878,10 @@ def user_login():
             return jsonify({'success': False, 'email': email, 'message': 'otp'}), 200
 
         token = generate_jwt(str(user['_id']), 'user')
-
-        send_login_notification(email, user["nama"])
+        send_login_notification(email, user.get("nama", "User"))
         local_tz = pytz.timezone("Asia/Jakarta")
-
         login_time = datetime.now(local_tz)
+
         login_data = {
             'user_id': str(user['_id']),
             'email': email,
@@ -804,28 +889,32 @@ def user_login():
             'ip_address': request.remote_addr,
             'user_agent': request.headers.get('User-Agent')
         }
-
         mongo.db.login_history.insert_one(login_data)
 
+        # ⬇️ Handle scores as a dict 
+        progress = mongo.db.user_progress.find_one({'user_id': str(user['_id'])}, sort=[('timestamp', -1)])
+        level = progress.get('level') if progress else 0
+
+        # Ambil points dari koleksi user_scores
+        score = mongo.db.user_points.find_one({'user_id': str(user['_id'])})
+        points = score.get('points', 0) if score else 0
+
         return jsonify({
+            'success': True,
             'message': 'Login berhasil',
             'token': token,
             'user': {
                 'name': user.get('nama', ''),
                 'profileImage': user.get('profileImage', ''),
-                'level': user.get('level', 0),
-                'history': user.get('history', []),
-                'leaderboardScore': user.get('leaderboardScore', 0),
                 'email': user.get('email', ''),
-                'kelas': user.get('kelas', ''),
-                'points': user.get('points', 0),
+                'points': points,
+                'level': level  # dari progress
             }
         }), 200
 
-
     except Exception as e:
-        # traceback.print_exc()
         return jsonify({'error': f'Terjadi kesalahan: {str(e)}'}), 500
+
 
 
 @app.route('/register', methods=['POST'])
@@ -968,35 +1057,207 @@ def get_login_history():
 @app.route('/api/score', methods=['POST'])
 @token_required
 def submit_score():
-    data = request.get_json()
-    level = data.get('level')
-    points = data.get('points', 0)
+    data = request.json
+    remaining_seconds = data.get('remaining_seconds')
 
-    if not level or points <= 0:
-        return jsonify({'error': 'Invalid level or points'}), 400
+    if remaining_seconds is None:
+        return jsonify({'error': 'remaining_seconds is required'}), 400
+
+    try:
+        points = int(remaining_seconds)
+    except ValueError:
+        return jsonify({'error': 'remaining_seconds must be an integer'}), 400
 
     user_id = g.user_id
-    users_col = mongo['users']
-    scores_col = mongo['scores']
-
-    user = users_col.find_one({"_id": user_id})
+    user = mongo.db.users.find_one({'_id': ObjectId(user_id)})
     if not user:
         return jsonify({'error': 'User not found'}), 404
 
-    new_total = user.get("points", 0) + points
-    users_col.update_one({"_id": user_id}, {"$set": {"points": new_total}})
+    local_tz = pytz.timezone("Asia/Jakarta")
+    now = datetime.now(local_tz)  # Simpan dalam format datetime asli
 
-    now = datetime.now(local_tz).strftime("%d-%m-%Y %H:%M:%S")
 
-    scores_col.insert_one({
-        "user_id": user_id,
+    # ✅ Update total points di user_points
+    existing_score = mongo.db.user_points.find_one({'user_id': str(user_id)})
+
+    if not existing_score:
+        mongo.db.user_points.insert_one({
+            'user_id': str(user_id),
+            'points': points,
+            'timestamp': now
+        })
+    else:
+        updated_points = existing_score.get('points', 0) + points
+        mongo.db.user_points.update_one(
+            {'user_id': str(user_id)},
+            {'$set': {
+                'points': updated_points,
+                'timestamp': now
+            }}
+        )
+
+    # ✅ Tambahkan poin ke `question_attempts` terbaru (jumlah total, bukan replace)
+    latest_attempt = mongo.db.question_attempts.find_one(
+        {'user_id': g.user_id},
+        sort=[('timestamp', -1)]
+    )
+
+    if latest_attempt:
+        current_total = latest_attempt.get('points', 0)
+        new_total = current_total + points
+
+        mongo.db.question_attempts.update_one(
+            {'_id': latest_attempt['_id']},
+            {'$set': {'points': new_total}}
+        )
+
+    return jsonify({'message': 'Score updated successfully'}), 200
+
+
+
+@app.route('/api/questions/<int:level>', methods=['GET'])
+@token_required
+def get_questions_by_level(level):
+    # Setup waktu lokal dan awal minggu
+    local_tz = pytz.timezone("Asia/Jakarta")
+    now = datetime.now(local_tz)
+    start_of_week = now - timedelta(days=now.weekday())
+    start_of_week = start_of_week.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Hitung jumlah attempt minggu ini
+    attempt_count = mongo.db.question_attempts.count_documents({
+        "user_id": g.user_id,
         "level": level,
-        "points": points,
+        "week_start": start_of_week
+    })
+
+    if attempt_count >= 3:
+        return jsonify({
+            "status": "error",
+            "message": f"Kamu sudah mencoba sebanyak 3 kali minggu ini"
+        }), 403
+
+    # Ambil soal dari DB
+    doc = mongo.db.questions.find_one({"level": level})
+    if not doc:
+        return jsonify({
+            "status": "error",
+            "message": f"Tidak ditemukan soal untuk level {level}"
+        }), 404
+
+    full_questions = doc["questions"]
+    count = {3: 3, 5: 5, 8: 8}.get(level, min(3, len(full_questions)))
+    selected = random.sample(full_questions, min(count, len(full_questions)))
+
+    # Simpan setiap percobaan sebagai record baru
+    mongo.db.question_attempts.insert_one({
+        "user_id": g.user_id,
+        "level": level,
+        "questions": selected,
+        "week_start": start_of_week,
         "timestamp": now
     })
 
     return jsonify({
-        "message": "Points added successfully",
-        "total_points": new_total,
-        "submitted_at": now
+        "status": "success",
+        "level": level,
+        "questions": selected
+    })
+
+
+from collections import defaultdict
+
+@app.route('/api/attempts', methods=['GET'])
+@token_required
+def get_question_attempts():
+    user_id = g.user_id
+
+    # Ambil semua attempts user
+    attempts = list(mongo.db.question_attempts.find(
+        {"user_id": user_id},
+        {"_id": 0, "level": 1, "timestamp": 1, "points": 1, "week_start": 1}
+    ).sort("timestamp", -1))
+
+    # Hitung jumlah attempt per (level, week_start)
+    attempt_counter = defaultdict(int)
+    for attempt in attempts:
+        key = (attempt['level'], str(attempt['week_start']))
+        attempt_counter[key] += 1
+        attempt['count'] = attempt_counter[key]
+
+    return jsonify({
+        "status": "success",
+        "attempts": attempts
     }), 200
+
+
+
+@app.route('/api/user/progress', methods=['POST'])
+@token_required
+def save_progress():
+    data = request.get_json()
+    level = data.get("level")
+
+    if level is None:
+        return jsonify({"status": "error", "message": "Level tidak diberikan"}), 400
+
+    user_id = g.user_id
+
+    # Cek apakah sudah pernah progress level ini
+    existing = mongo.db.user_progress.find_one({
+        "user_id": str(user_id),
+        "level": level
+    })
+
+    if existing:
+        return jsonify({
+            "status": "info",
+            "message": f"Level {level} sudah pernah diselesaikan"
+        }), 200
+
+    # Simpan ke collection baru
+    timestamp = datetime.now(pytz.timezone("Asia/Jakarta")).strftime("%Y-%m-%d %H:%M:%S")
+
+    mongo.db.user_progress.insert_one({
+        "user_id": str(user_id),
+        "level": level,
+        "timestamp": timestamp
+    })
+
+    return jsonify({
+        "status": "success",
+        "message": f"Progress level {level} berhasil disimpan"
+    }), 200
+
+@app.route('/api/user/progress', methods=['GET'])
+@token_required
+def get_user_progress():
+    user_id = str(g.user_id)  # pastikan berupa string
+
+    progress = list(mongo.db.user_progress.find(
+        {"user_id": user_id},
+        {"_id": 0, "level": 1, "timestamp": 1}
+    ))
+
+    return jsonify({
+        "status": "success",
+        "progress": progress
+    }), 200
+
+
+@app.route('/user/leaderboard')
+@token_required
+def leaderboard_json():
+    # ambil data dari MongoDB dan return sebagai JSON
+    leaderboard = list(mongo.db.user_points.find())
+    users = {str(u["_id"]): u for u in mongo.db.users.find()}
+    result = []
+    for l in leaderboard:
+        user = users.get(l['user_id'])
+        if user:
+            result.append({
+                'nama': user.get('nama', 'No Name'),
+                'points': l.get('points', 0)
+            })
+    return jsonify(result)
+
