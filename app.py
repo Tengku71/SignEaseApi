@@ -1033,18 +1033,32 @@ def delete_user():
 @token_required
 def get_login_history():
     try:
-        
+        # Define Jakarta timezone
+        local_tz = pytz.timezone("Asia/Jakarta")
+
+        # Find user
         user = mongo.db.users.find_one({'_id': ObjectId(g.user_id)})
         if not user:
             return jsonify({'error': 'User tidak ditemukan'}), 404
-            
+
+        # Fetch login history
         history_cursor = mongo.db.login_history.find({'user_id': g.user_id}).sort('timestamp', -1)
-        
+
         history = []
         for entry in history_cursor:
+            timestamp = entry.get('timestamp')
+            if timestamp is not None:
+                # Assume timestamp is in UTC and convert to Jakarta time
+                if timestamp.tzinfo is None:
+                    timestamp = pytz.utc.localize(timestamp)
+                jakarta_time = timestamp.astimezone(local_tz)
+                timestamp_str = jakarta_time.strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                timestamp_str = None
+
             history.append({
                 'email': entry.get('email'),
-                'timestamp': entry.get('timestamp').strftime('%Y-%m-%d %H:%M:%S'),
+                'timestamp': timestamp_str,
                 'ip_address': entry.get('ip_address'),
                 'user_agent': entry.get('user_agent')
             })
