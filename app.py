@@ -97,14 +97,6 @@ def login_google_mobile():
                 }
             })
             otp_generate(user_info['email'], user_info['name'])
-            login_data = {
-                'user_id': str(user['_id']),
-                'email': user_info['email'],
-                'timestamp': login_time,
-                'ip_address': request.remote_addr,
-                'user_agent': request.headers.get('User-Agent')
-            }
-            mongo.db.login_history.insert_one(login_data)
             return jsonify({
                 'success': True,
                 'email': user_info['email'],
@@ -857,10 +849,19 @@ def verify_otp():
         return jsonify({'status': 'error', 'message': 'OTP sudah kedaluwarsa'}), 400
 
     # ✅ OTP is valid
-    mongo.db.users.update_one({'email': send_login_notification}, {'$set': {'confirmed': True}})
+    mongo.db.users.update_one({'email': email}, {'$set': {'confirmed': True}})
     mongo.db.otps.delete_many({'email': email})
 
     token_jwt = generate_jwt(str(user['_id']), "user")
+
+    login_data = {
+        'user_id': str(user['_id']),
+        'email': email,
+        'timestamp': now,
+        'ip_address': request.remote_addr,
+        'user_agent': request.headers.get('User-Agent')
+    }
+    mongo.db.login_history.insert_one(login_data)
 
     return jsonify({
         'status': "success",
