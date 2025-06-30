@@ -208,6 +208,10 @@ def basic_auth_required(f):
 
 @app.route('/', methods=["GET"])
 def home():
+    username = session.get('username')
+    if not username:
+        return redirect('add_user')
+    
     jumlah_akun = mongo.db.users.count_documents({})
 
     wib = timezone('Asia/Jakarta')
@@ -234,6 +238,11 @@ def home():
 # Bagian LeaderBoard
 @app.route('/leaderboard', methods=['GET'])
 def leaderboard():
+
+    username = session.get('username')
+    if not username:
+        return redirect('add_user')
+    
     # Ambil filter dari query parameter
     nama = request.args.get("nama")
     sort = request.args.get("sort", "desc")
@@ -304,6 +313,11 @@ def leaderboard():
 
 @app.route('/reset_all_points', methods=['POST'])
 def reset_all_points():
+
+    username = session.get('username')
+    if not username:
+        return redirect('add_user')
+    
     users = list(mongo.db.user_points.find({}))  # Ambil semua user yang punya poin
 
     local_tz = pytz.timezone("Asia/Jakarta")
@@ -329,6 +343,11 @@ def reset_all_points():
 # Reset Point (admin)
 @app.route('/reset_point', methods=['POST'])
 def reset_point():
+
+    username = session.get('username')
+    if not username:
+        return redirect('add_user')
+
     user_id = request.form.get('user_id')  # Harus dari POST body, bukan query string
 
     if not user_id:
@@ -352,6 +371,11 @@ def reset_point():
 
 @app.route('/questions', methods=['GET', 'POST'])
 def save_questions():
+
+    username = session.get('username')
+    if not username:
+        return redirect('add_user')
+
     if request.method == 'POST':
         level = int(request.form.get('level'))
         questions = request.form.getlist('questions[]')
@@ -374,6 +398,11 @@ def save_questions():
 
 @app.route('/logout')
 def logout():
+
+    username = session.get('username')
+    if not username:
+        return redirect('add_user')
+
     session.clear()
     flash('Logout berhasil!', 'success')
     return redirect(url_for('home'))
@@ -399,6 +428,11 @@ def add_user():
 
 @app.route('/login_history', methods=['GET'])
 def admin_login_history():
+
+    username = session.get('username')
+    if not username:
+        return redirect('add_user')
+
     try:
         # Ambil parameter dari form
         month = request.args.get('month')
@@ -462,7 +496,7 @@ def admin_login_history():
 
 @app.route('/profile')
 def profile():
-    username = session.get('username')  # Ambil user_id dari session
+    username = session.get('username')
     if not username:
         return redirect('add_user')
 
