@@ -111,13 +111,18 @@ def login_google_mobile():
 
         user = mongo.db.users.find_one({'email': user_info['email']})
         login_time = datetime.now(local_tz)
-        mongo.db.login_history.insert_one({
-            'user_id': str(user['_id']),
-            'email': user['email'],
-            'timestamp': login_time,
-            'ip_address': request.remote_addr,
-            'user_agent': request.headers.get('User-Agent')
+        mongo.db.users.insert_one({
+            'nama': user_info['name'],
+            'email': user_info['email'],
+            'auth_type': 'google',  # Add this line
+            'confirmed': False,
+            'scores': {
+                'level': 0,
+                'points': 0,
+                'updated_at': ''
+            }
         })
+
 
         role = 'admin' if user_info['email'] == 'admin@example.com' else 'user'
         token = generate_jwt(str(user['_id']), role)
@@ -493,6 +498,10 @@ def request_reset():
     if not user:
         return jsonify({'status': 'fail', 'message': 'Email tidak terdaftar'}), 404
 
+    if user.get('auth_type') == 'google':
+        return jsonify({'status': 'fail', 'message': 'Akun ini menggunakan login Google. Reset password tidak berlaku.'}), 403
+
+
     token = generate_reset_token(email)
     reset_url = f'https://signease.tengkudimas.my.id/reset-password/{token}'
 
@@ -677,33 +686,59 @@ def send_login_notification(email, nama):
     local_tz = pytz.timezone("Asia/Jakarta")
     now = datetime.now(local_tz).strftime("%d-%m-%Y %H:%M:%S")
 
-    # Reset URL (for safety link if user didn't login)
-    token = generate_reset_token(email)
-    reset_url = f'https://signease.tengkudimas.my.id/reset-password/{token}'
+    # Cek metode login (manual atau google)
+    user = mongo.db.users.find_one({'email': email})
+    if not user:
+        print("[ERROR] User not found for login notification.")
+        return
 
+    is_google_user = user.get('auth_type') == 'google'
+
+    # Compose email body
     subject = "Notifikasi Login - Akun Anda"
     msg = Message(subject=subject, recipients=[email])
-    msg.body = f"""
-    Halo {nama},
 
-    Kami mendeteksi login ke akun Anda pada:
+    if is_google_user:
+        msg.body = f"""
+        Halo {nama},
 
-    📅 Tanggal & Waktu: {now} (WIB)
+        Kami mendeteksi login ke akun Anda pada:
 
-    Jika ini adalah Anda, abaikan email ini.
+        📅 Tanggal & Waktu: {now} (WIB)
 
-    Jika **bukan** Anda, segera amankan akun Anda dengan mengganti password di tautan ini:
-    {reset_url}
+        Jika ini adalah Anda, abaikan email ini.
 
-    Terima kasih,
-    Tim Keamanan SignEase
-    """
+        Jika **bukan** Anda, segera login ulang dengan akun Google Anda dan periksa aktivitas terbaru.
+
+        Terima kasih,
+        Tim Keamanan SignEase
+        """
+    else:
+        # Tambahkan reset password URL untuk user manual
+        token = generate_reset_token(email)
+        reset_url = f'https://signease.tengkudimas.my.id/reset-password/{token}'
+        msg.body = f"""
+        Halo {nama},
+
+        Kami mendeteksi login ke akun Anda pada:
+
+        📅 Tanggal & Waktu: {now} (WIB)
+
+        Jika ini adalah Anda, abaikan email ini.
+
+        Jika **bukan** Anda, segera amankan akun Anda dengan mengganti password di tautan ini:
+        {reset_url}
+
+        Terima kasih,
+        Tim Keamanan SignEase
+        """
 
     try:
         mail.send(msg)
         print("Login notification email sent successfully.")
     except Exception as e:
         print(f"Failed to send login notification email: {e}")
+
 
 @app.route('/resend_otp', methods=['POST'])
 def resend_otp():
@@ -959,8 +994,10 @@ def register():
             'jeniskelamin': jeniskelamin,
             'tanggal_lahir': tanggal_lahir,
             'alamat': alamat,
-            'confirmed': False
+            'confirmed': False,
+            'auth_type': 'manual'  # Add this line
         }
+
         mongo.db.users.insert_one(user_data)
 
         otp_generate(email, nama)
