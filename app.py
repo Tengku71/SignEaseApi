@@ -68,6 +68,7 @@ def login_google_mobile():
         data = request.get_json()
         id_token_str = data.get('idToken')
         local_tz = pytz.timezone("Asia/Jakarta")
+        login_time = datetime.now(local_tz)
 
         if not id_token_str:
             return jsonify({'success': False, 'message': 'ID Token is required'}), 400
@@ -87,14 +88,23 @@ def login_google_mobile():
             mongo.db.users.insert_one({
                 'nama': user_info['name'],
                 'email': user_info['email'],
+                'auth_type': 'google',  # Add this line
                 'confirmed': False,
-                'scores': {  # initialize scores to prevent issues
+                'scores': {
                     'level': 0,
                     'points': 0,
                     'updated_at': ''
                 }
             })
             otp_generate(user_info['email'], user_info['name'])
+            login_data = {
+                'user_id': str(user['_id']),
+                'email': user_info['email'],
+                'timestamp': login_time,
+                'ip_address': request.remote_addr,
+                'user_agent': request.headers.get('User-Agent')
+            }
+            mongo.db.login_history.insert_one(login_data)
             return jsonify({
                 'success': True,
                 'email': user_info['email'],
@@ -110,18 +120,15 @@ def login_google_mobile():
             }), 200
 
         user = mongo.db.users.find_one({'email': user_info['email']})
-        login_time = datetime.now(local_tz)
-        mongo.db.users.insert_one({
-            'nama': user_info['name'],
+        
+        login_data = {
+            'user_id': str(user['_id']),
             'email': user_info['email'],
-            'auth_type': 'google',  # Add this line
-            'confirmed': False,
-            'scores': {
-                'level': 0,
-                'points': 0,
-                'updated_at': ''
-            }
-        })
+            'timestamp': login_time,
+            'ip_address': request.remote_addr,
+            'user_agent': request.headers.get('User-Agent')
+        }
+        mongo.db.login_history.insert_one(login_data)
 
 
         role = 'admin' if user_info['email'] == 'admin@example.com' else 'user'
@@ -618,23 +625,6 @@ def confirm_token(token, expiration=3600):  # Default: 1 hour
 ################################################################################                                       
 
 
-# # User class for Flask-Login
-# class User(UserMixin):
-#     def __init__(self, user_data):
-#         self.id = str(user_data['_id'])
-#         self.name = user_data['name']
-#         self.email = user_data['email']
-
-# # User loader for Flask-Login
-# @login_manager.user_loader
-# def load_user(user_id):
-#     user_data = mongo.db.users.find_one({"_id": user_id})
-#     if user_data:
-#         return User(user_data)
-#     return None
-
-
-
 
 
 ################################################################################
@@ -871,19 +861,12 @@ def verify_otp():
     mongo.db.otps.delete_many({'email': email})
 
     token_jwt = generate_jwt(str(user['_id']), "user")
-    send_login_notification(email, user.get('nama'))
 
     return jsonify({
         'status': "success",
         'message': 'Verifikasi berhasil',
         'token': token_jwt,
     }), 200
-
-
-
-    # return jsonify({'status': 'success', 'message': 'Verifikasi berhasil'})
-
-
 
 
 ################################################################################
