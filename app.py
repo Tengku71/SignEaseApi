@@ -507,28 +507,34 @@ def request_reset():
 
     return jsonify({'status': 'success', 'message': 'Tautan reset password telah dikirim ke email'}), 200
 
-# Reset password route
-@app.route('/reset-password/<token>', methods=['POST'])
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
 def reset_password(token):
     email = verify_reset_token(token)
 
     if email is None:
-        return jsonify({'status': 'fail', 'message': 'Token tidak valid atau kadaluarsa'}), 400
+        flash('Tautan reset password tidak valid atau telah kadaluarsa', 'danger')
+        # return redirect(url_for('forgot_password'))
 
-    password = request.form.get('Password')
-    if not password:
-        return jsonify({'status': 'fail', 'message': 'Password tidak boleh kosong'}), 400
+    if request.method == 'POST':
+        password = request.form.get('Password')
 
-    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        # Hash password
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
 
-    user = mongo.db.users.find_one({'email': email})
-    if not user:
-        return jsonify({'status': 'fail', 'message': 'Pengguna tidak ditemukan'}), 404
+        # Update password di MongoDB
+        result = mongo.db.users.update_one(
+            {'email': email},
+            {'$set': {'password': hashed_password}}
+        )
 
-    mongo.db.users.update_one({'email': email}, {'$set': {'password': hashed_password}})
+        if result.matched_count > 0:
+            flash('Password Anda berhasil diubah!', 'success')
+            return redirect(url_for('add_user'))  # Halaman login
+        else:
+            flash('Pengguna tidak ditemukan', 'danger')
+            return redirect(url_for('forgot_password'))
 
-    return jsonify({'status': 'success', 'message': 'Password berhasil diubah'}), 200
-
+    return render_template('Login/forgot_password2.html')
 
 # Token generation and confirmation function
 serializer = URLSafeTimedSerializer(app.secret_key)
