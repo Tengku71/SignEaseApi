@@ -857,7 +857,7 @@ def verify_otp():
         return jsonify({'status': 'error', 'message': 'OTP sudah kedaluwarsa'}), 400
 
     # ✅ OTP is valid
-    mongo.db.users.update_one({'email': send_login_notification}, {'$set': {'confirmed': True}})
+    mongo.db.users.update_one({'email': email}, {'$set': {'confirmed': True}})
     mongo.db.otps.delete_many({'email': email})
 
     token_jwt = generate_jwt(str(user['_id']), "user")
