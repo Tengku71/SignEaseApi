@@ -886,10 +886,12 @@ def get_user():
         return jsonify({'error': 'User not found'}), 404
 
     # Get score info
-    progress = mongo.db.user_progress.find_one({'user_id': str(user['_id'])}, sort=[('timestamp', -1)])
+    progress = mongo.db.user_progress.find_one(
+        {'user_id': str(user['_id'])}, sort=[('timestamp', -1)]
+    )
     level = progress.get('level') if progress else 0
 
-    # Ambil points dari koleksi user_scores
+    # Get points from user_points
     score = mongo.db.user_points.find_one({'user_id': str(user['_id'])})
     points = score.get('points', 0) if score else 0
 
@@ -900,8 +902,9 @@ def get_user():
             'name': user.get('nama', ''),
             'profileImage': user.get('profileImage', ''),
             'email': user.get('email', ''),
+            'auth_type': user.get('auth_type', ''),  # ✅ Tambahkan auth_type
             'points': points,
-            'level': level  # dari progress
+            'level': level
         }
     }), 200
 
