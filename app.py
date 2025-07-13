@@ -923,7 +923,7 @@ def user_login():
 
         user = mongo.db.users.find_one({'email': email})
         if not user:
-            return jsonify({'error': 'Email atau password salah'}), 401
+            return jsonify({'error': 'Email Tidak ditemukan!'}), 401
 
         stored_password = user.get('password')
         if not stored_password:
@@ -934,7 +934,7 @@ def user_login():
         password_bytes = password.encode('utf-8')
 
         if not bcrypt.checkpw(password_bytes, stored_password):
-            return jsonify({'error': 'Email atau password salah'}), 401
+            return jsonify({'error': 'Password TIdak Sesuai!'}), 401
 
         if not user.get('confirmed', False):
             result = otp_generate(email, user.get('nama', 'User'))
