@@ -1086,13 +1086,22 @@ def edit_user():
 def delete_user():
     try:
         user_id = g.user_id
-        
-        result = mongo.db.users.delete_one({'_id': ObjectId(user_id)})
-        if result.deleted_count == 0:
+        object_id = ObjectId(user_id)
+
+        # Hapus user utama
+        user_result = mongo.db.users.delete_one({'_id': object_id})
+        if user_result.deleted_count == 0:
             return jsonify({'error': 'User tidak ditemukan'}), 404
-        return jsonify({'message': 'User berhasil dihapus'})
+
+        # Hapus data terkait
+        mongo.db.login_history.delete_many({'user_id': user_id})
+        mongo.db.user_points.delete_many({'user_id': user_id})
+        mongo.db.user_progress.delete_many({'user_id': user_id})
+
+        return jsonify({'message': 'User dan seluruh data terkait berhasil dihapus'}), 200
+
     except Exception as e:
-        return jsonify({'error': f'Kesalahan server: {str(e)}'}), 400
+        return jsonify({'error': f'Kesalahan server: {str(e)}'}), 500
 
 @app.route('/login_history_user', methods=['GET'])
 @token_required
